@@ -3,6 +3,7 @@ const dotenv = require('dotenv')
 const querystring = require('querystring')
 const axios = require('axios')
 const port = 8888
+const tokens = []
 
 dotenv.config()
 var app = express()
@@ -32,11 +33,11 @@ app.get('/login', (req, res) => {
       state: state,
       scope: scope,
     })
-    //redirect to spotify auth service 
+    //redirect to spotify auth service || user credentials need be entered manually once
     res.redirect(`https://accounts.spotify.com/authorize?${queryParams}`)
 })
 
-//handle redirect from spotify auth service to http://localhost:8888/callback 
+//handle redirect from spotify auth service to http://localhost:8888/callback and store access/ refresh token
 app.get('/callback', (req, res) => {
     const code = req.query.code || null
   
@@ -55,7 +56,13 @@ app.get('/callback', (req, res) => {
     })
       .then(response => {
         if (response.status === 200) {
-          res.send(`<pre>${JSON.stringify(response.data, null, 2)}</pre>`)
+          
+          let newItem = {
+            access_token: response.data.access_token,
+            refresh_token: response.data.refresh_token,
+          }
+          tokens.push(newItem)     
+          res.send(`<pre>${JSON.stringify(response.data, null, 2)}</pre>`)       
         } else {
           res.send(response)
         }
@@ -67,4 +74,37 @@ app.get('/callback', (req, res) => {
 
   app.listen(port, () => {
     console.log(`Schluesselmeister listening on port:  ${port}`)
+  })
+
+  //using the refresh token to a get new access token || headless interface towards server sided applications
+  app.get('/refresh_token', function(req, res) {
+
+    axios({
+      method: 'post',
+      url: 'https://accounts.spotify.com/api/token',
+      data: querystring.stringify({
+        grant_type: 'refresh_token',
+        refresh_token: tokens[0].refresh_token
+      }),
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        Authorization: `Basic ${new Buffer.from(`${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`).toString('base64')}`,
+      },
+    })
+      .then(response => {
+        if (response.status === 200) {
+          tokens[0].access_token = response.data.access_token
+          res.send(`<pre>${JSON.stringify(response.data, null, 2)}</pre>`)       
+        } else {
+          res.send(response)
+        }
+      })
+      .catch(error => {
+        res.send(error)
+      })
+  })
+
+  //get access token || headless interface towards server sided applications
+  app.get('/access_token', function(req, res) {
+    res.send(tokens[0].access_token)
   })
